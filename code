@@ -1,0 +1,126 @@
+| trig_dat_lic    | INSERT | client | BEGIN
+IF NEW.dat_lic> CURDATE() THEN
+SIGNAL SQLSTATE '45001' SET
+MESSAGE_TEXT='WARNING: Date can not be in the future';
+END IF;
+END | BEFORE | 2019-01-31 15:27:28.02 | STRICT_TRANS_TABLES,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION | root@localhost | utf8                 | utf8_general_ci      | utf8_general_ci    |
+| trig_price      | INSERT | model  | BEGIN
+IF NEW.price_day<=0 THEN
+SIGNAL SQLSTATE '45000' SET
+MESSAGE_TEXT='Price should be positive';
+END IF;
+END                     | BEFORE | 2019-01-31 04:12:59.50 | STRICT_TRANS_TABLES,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION | root@localhost | utf8                 | utf8_general_ci      | utf8_general_ci    |
+| trig_capacity   | INSERT | model  | BEGIN
+IF NEW.capacity<=1 THEN
+SIGNAL SQLSTATE '45000' SET
+MESSAGE_TEXT='WARNING: Capacity should be greater then 0';
+END IF;
+END    | BEFORE | 2019-01-31 14:44:03.82 | STRICT_TRANS_TABLES,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION | root@localhost | utf8                 | utf8_general_ci      | utf8_general_ci    |
+| trig_rent_price | INSERT | rental | BEGIN
+IF NEW.rent_price<=0 THEN
+SIGNAL SQLSTATE '45000' SET
+MESSAGE_TEXT='WARNING: Rental price should be positive';
+END IF;
+END;
+
+client | CREATE TABLE `client` (
+  `cid` decimal(5,0) NOT NULL,
+  `name` varchar(50) NOT NULL,
+  `dat_lic` date NOT NULL,
+  `drvlic_no` char(20) NOT NULL,
+  `dat_drvlic` date NOT NULL,
+  PRIMARY KEY (`cid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 |
+CREATE TABLE `model` (
+  `name_mod` varchar(10) NOT NULL,
+  `brand` varchar(50) NOT NULL,
+  `price_day` decimal(5,0) NOT NULL,
+  `capacity` decimal(60,0) NOT NULL,
+  `body_type` varchar(30) NOT NULL,
+  PRIMARY KEY (`name_mod`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8
+
+CREATE TABLE `car` (
+  `state_no` varchar(10) NOT NULL,
+  `year_mnf` year(4) NOT NULL,
+  `color` varchar(30) NOT NULL,
+  `status` varchar(100) NOT NULL DEFAULT 'rented',
+  `run` varchar(10) NOT NULL,
+  `car_mod` varchar(10) NOT NULL,
+  PRIMARY KEY (`state_no`),
+  KEY `fk_mod` (`car_mod`),
+  CONSTRAINT `fk_mod` FOREIGN KEY (`car_mod`) REFERENCES `model` (`name_mod`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8
+
+CREATE TABLE `rental` (
+  `rid` decimal(4,0) NOT NULL,
+  `rent_dat` date NOT NULL,
+  `lease_day` decimal(3,0) NOT NULL,
+  `rent_price` decimal(10,2) NOT NULL,
+  `return_day` date DEFAULT NULL,
+  `remark` varchar(100) DEFAULT NULL,
+  `clt_id` decimal(5,0) NOT NULL,
+  `car_id` varchar(10) DEFAULT NULL,
+  PRIMARY KEY (`rid`),
+  KEY `fk_client` (`clt_id`),
+  KEY `fk_car` (`car_id`),
+  CONSTRAINT `fk_car` FOREIGN KEY (`car_id`) REFERENCES `car` (`state_no`),
+  CONSTRAINT `fk_client` FOREIGN KEY (`clt_id`) REFERENCES `client` (`cid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8
+
+select r.c_id, c.c_id, c.dat_drvlic,
+    -> (YEAR(r.return_day)-YEAR(c.dat_drvlic))-(RIGHT(r.return_day,5)<RIGHT(c.dat_drvlic,5))>=10 as liedat
+    -> from client as c, rental as r
+    -> where c.c_id=r.c_id
+ group by r.c_id;
+ 
+ select *from car
+    -> where state_no in
+    -> (select state_no from rental
+     -> where return_day>curdate() );
+ select c_id, count(*)
+    -> from rental
+    -> group by c_id
+    -> having count(*)>10;
+
+ select distinct m.m_id, m.capacity, m.price_day
+    -> from model m, rental r, car c
+    -> where r.return_day<curdate() and m.price_day<2000 and m.capacity>3 and c.state_no=r.state_no
+    -> order by m.price_day;
+
+!!!!!> select c.state_no, m.price_day,m.capacity
+    -> from car c, model m, rental r
+    -> where r.state_no<>c.state_no and m.capacity>4 and m.price_day<2000 and m.m_id=c.m_id
+    -> union
+    -> select r.state_no, m.price_day, m.capacity
+    -> from car c, rental r, model m
+    -> where r.state_no=c.state_no and r.return_day<curdate() and m.capacity>4 and m.price_day<2000 and m.m_id=c.m_id;
+   
+select c_id, rent_dat, return_day, rent_day,
+    -> rent_day=(YEAR(return_day)-YEAR(rent_dat))-(RIGHT(return_day,5)<RIGHT(rent_dat,5)) as correct
+    -> from rental
+    -> where return_day<curdate()
+       group by c_id;
+
+create view car_downtime(state_no,color,run,m_id)
+    -> as select state_no, color, run, m_id
+    -> from car
+    -> where state_no not in
+    -> (select state_no from rental
+    -> where monthname(curdate())=monthname(rent_dat) and year(curdate())=year(rent_dat));
+ 
+create view car_employ(model, state_no, rental, all_price)
+    -> as select c.m_id, r.state_no, count(*), sum(rent_price)
+    -> from car c, rental r
+    -> where c.state_no=r.state_no
+    -> group by r.state_no;
+
+create view popular_car(model, state_no, color, run)
+    -> as select m_id, state_no, color, run
+    -> from car
+    -> where state_no in (select r1.state_no from rental r1,rental r2 where r1.state_no=r2.state_no and r1.return_day=r2.rent_dat);
+
+    
+     
+ 
+
